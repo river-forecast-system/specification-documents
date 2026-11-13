@@ -1,3 +1,4 @@
 site/
 .idea/
 .venv/
+.DS_Store

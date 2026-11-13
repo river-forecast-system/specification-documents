@@ -1,8 +1,21 @@
 [project]
 site_name = "River Forecast System Version Specifications"
+extra_css = ["stylesheets/extra.css"]
 nav = [
   { "Home" = "index.md" },
   { "RFS v3" = "specs/rfs-v3.md" },
   { "RFS v2" = "specs/rfs-v2.md" },
   { "RFS v1" = "specs/rfs-v1.md" },
+]
+
+[project.theme]
+features = [
+  # the pages are tabs in the header
+  "navigation.tabs",
+  # the header slides away when scrolling down and returns when scrolling up
+  "header.autohide",
+  # a page's table of contents is in the left column, so there is no right column
+  "toc.integrate",
+  # the table of contents scrolls to keep the heading being read in view
+  "toc.follow",
 ]
