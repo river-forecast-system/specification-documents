@@ -205,7 +205,7 @@ flowchart LR
 Each product in the diagrams should have a short name in [Products](#products) and a section under [Available Products](#available-products). These do not:
 
 1. **Observations.** The gauge database the fitting reads. It is an input, not a published product, but the fitted products cannot be reproduced without naming which version was used.
-2. **Routing Parameters.** Published as `routing.parquet` in [Routing Configurations](#routing-configurations). How a release records which fit of the equations and which
+2. **Routing Parameters.** Published as `network.parquet` in [Routing Configurations](#routing-configurations). How a release records which fit of the equations and which
    basin calibrations made it is not described.
 3. **Runoff Model Weights.** The Calibration Scripts write `runoff_correction.pt`, the trained correction, and `river_losses.parquet`, the losing rivers it was trained with
    and their losses, which production routing must apply and river-route cannot apply yet. Neither has a short name or a location in the bucket.
@@ -302,6 +302,7 @@ Each product with a short name has one unique within this model version and stab
 | `lakes`                    | Lakes                    | Hydrography               | GeoParquet          | Per release                               |                    |
 | `metadata`                 | Stream attributes        | Hydrography               | Parquet, Zarr       | Per release                               | ~215 MB + ~70 MB   |
 |                            | Stream tiles             | Hydrography               | PMTiles             | Per release                               | ~3.2 GB            |
+|                            | Catchment tiles          | Hydrography               | PMTiles             | Per release                               | <mark>TBD</mark>   |
 |                            | Region tiles             | Hydrography               | PMTiles             | Not built                                 |                    |
 |                            | Modification records     | Hydrography               | JSON                | Per release                               | ~165 MB            |
 | `routing-configs`          | River-route configs      | Model Configs             | Parquet, netCDF     | Per release                               | ~1.5 GB            |
@@ -320,7 +321,7 @@ Each product with a short name has one unique within this model version and stab
 |                            | Warm states              | Forecasts                 | Parquet             | Daily, with the forecast                  |                    |
 | `forecast-flood-maps`      | Forecast flood maps      | Flood maps, Forecasts     | GeoParquet, GeoTIFF | Daily, with the forecast                  | <5 GB              |
 | `return-period-flood-maps` | Return period flood maps | Flood maps, Retrospective | GeoTIFF             | Per release                               | <10 GB             |
-| `fldpln-libraries`         | FLDPLN libraries         | Flood maps                | Zarr, PMTiles       | Per release                               |                    |
+| `fldpln-libraries`         | FLDPLN libraries         | Flood maps                | Parquet, Zarr       | Per release                               |                    |
 
 ### Organization on S3
 
@@ -334,6 +335,7 @@ s3://river-forecast-system-v3/
 │   │   ├── metadata.parquet                    # every reach's attributes, all regions concatenated in riverIndex order
 │   │   ├── metadata.zarr/                      # the network walking columns as chunked arrays, for browser clients
 │   │   ├── streams.pmtiles                     # z0-11, for mapbox-gl-js, maplibre, leaflet, etc
+│   │   ├── catchments.pmtiles                  # catchment polygons and boundaries, for the same clients
 │   │   ├── regions.pmtiles                     # z0-12, region outlines - NOT CURRENTLY BUILT
 │   │   ├── tdxhydro_to_v3_id_map.parquet       # optional, every source TDX-Hydro reach to the v3 reach representing it
 │   │   └── streams_map_optimized.gdb.zip       # for esri map layers - not produced by the hydrography pipeline, TBD
@@ -353,18 +355,14 @@ s3://river-forecast-system-v3/
 │       └── synthetic_rating_curve.parquet      # from ARC, for routing, FIM? Q_baseflow depends on a modeled value! - TBD
 ├── routing/                                    # routing configurations, made by the Calibration Scripts from hydrography/
 │   ├── global/                                 # every region's files concatenated in riverIndex order, to route the world at once
-│   │   ├── routing.parquet
-│   │   ├── routing_baseline.parquet
-│   │   ├── routing_reference.parquet
+│   │   ├── network.parquet
 │   │   ├── gridweights_ERA5_global.nc
 │   │   ├── gridweights_ERA5_global.parquet
 │   │   ├── gridweights_ERA5Land_global.nc
 │   │   ├── gridweights_ERA5Land_global.parquet
 │   │   └── gridweights_O1280_global.nc
 │   └── region=<id>/                            # the regions of hydrography/, rivers in the same riverIndex order
-│       ├── routing.parquet                     # the Routing Parameters: calibrated Muskingum k/x and connectivity, for river-route
-│       ├── routing_baseline.parquet            # the regional equations' k, before the basins are calibrated
-│       ├── routing_reference.parquet           # k at 0.5 m/s, the reference the calibration is compared with
+│       ├── network.parquet                     # the Routing Parameters: calibrated Muskingum k/x and connectivity, for river-route
 │       ├── gridweights_ERA5_<id>.nc            # runoff grid to catchment weights, one per forcing grid, the standard format
 │       ├── gridweights_ERA5_<id>.parquet       # an extra copy of the ERA5 weights, in the layout jsrr reads fastest
 │       ├── gridweights_ERA5Land_<id>.nc        # ERA5-Land, 0.1 degree
@@ -387,20 +385,23 @@ s3://river-forecast-system-v3/
 ├── flood-maps/
 │   └── lon=XXX/
 │       └── lat=YYY/
-│           │   └── nencarta_config_v5.0.0.yaml
+│           ├── return_period_maps/
+│           │   ├── rp2.tif
+│           │   ├── rp5.tif
+│           │   ├── rp10.tif
+│           │   ├── rp25.tif
+│           │   ├── rp50.tif
+│           │   └── rp100.tif
 │           ├── arc/
-│           │   ├── fixed_dem.tif
-│           │   ├── derived_streams.geo.parquet
-│           │   └── derived_streams.tif
-│           ├── fldpln/
-│           │   ├── filled_dem.tif
-│           │   ├── flow_direction_rater.tif
-│           │   ├── derived_streams.geo.parquet
-│           │   └── <filename>.tif
-│           └── fldpln.zarr/
-│               ├── library/
-│               ├── streams/
-│               └── zarr.json
+│           │   ├── vdt.parquet
+│           │   └── representative_xsections.parquet
+│           └── fldpln/
+│               ├── fldpln_library.parquet
+│               ├── stream_info.parquet
+│               └── fldpln.zarr/
+│                   ├── library/
+│                   ├── streams/
+│                   └── zarr.json
 └── forecasts15/                                # 15 day @ 3 hour forecasts, lead_time coordinate alongside absolute time
     └── year=YYYY/
         └── month=MM/
@@ -442,6 +443,113 @@ s3://river-forecast-system-v3/
 Hydrography is divided by **HydroBASINS level 2 region**, written into the bucket as a `region=<id>` hive partition, with the products that span every region in `hydrography/global/`.
 
 Its files are listed in [Organization on S3](#organization-on-s3). The routing configurations derived from this network are published apart from it, see [Routing Configurations](#routing-configurations).
+
+The row order, attribute schema, geometry storage, lakes, network simplification, modification records, and vector tiles are explained in the
+[Technical Appendix](#hydrography-details).
+
+### Routing Configurations
+
+The files the router needs to route a region, short name `routing-configs`, are published under `routing/`, partitioned by the same `region=<id>` as the hydrography and kept apart from it.
+They are the exact files used to generate official routing outputs. They are made by the Calibration Scripts
+([`v3-calibration-scripts`](https://github.com/river-forecast-system/v3-calibration-scripts)) from the published hydrography after it is built, which they only read, so a new
+forcing grid changes `routing/` and never `hydrography/`. The hydrography carries no routing configuration. The Routing Scripts only read `routing/`.
+
+- `1_inputs/` writes the grid weights of every forcing.
+- `2_routing_calibration/` writes the Routing Parameters, the calibrated Muskingum k and x in `network.parquet`, see [RFS Calculations](#rfs-calculations): the regional
+  equations of celerity by drainage area give every river its baseline k, and the rivers upstream of a gauge take the k of their basin's
+  calibration, one celerity multiplier per stretch between gauges, fitted from upstream down so that no gauge's KGE falls. x is 0.2 everywhere.
+
+Its files are listed in [Organization on S3](#organization-on-s3). `routing/global/` holds every region's file concatenated in `riverIndex` order, nothing recomputed, so the
+whole world can be routed in one process, which reads a forecast's GRIB files once rather than once per region.
+
+Every file lists the region's rivers in `riverIndex` order, which is topological. The router pairs weights with rivers by position, not by id: lateral inflow column i is routed into river i, so
+a region's files must agree with each other and with the hydrography's row order.
+
+`network.parquet` is river-route's network file, one row per reach: `riverId`, `nextRiverId`, `riverIndex` and `upstreamCount` from the metadata and
+streams tables, and `muskingumK` (seconds) and `muskingumX`. `gridweights_<grid>_<id>.nc` is one row per runoff-cell-to-catchment intersection, stamped with the grid file and the catchments it was cut
+from. It is named for the forcing grid, so each grid needs its own. On the regular ERA5 grid its columns are `river_id`, `x_index`, `y_index`, `x`, `y`, `area_sqm`, `proportion`. On the
+IFS reduced gaussian grid, `O1280`, a cell is located by `cell_index`, its position in the values of a GRIB message, in place of `x_index` and `y_index`: `river_id`, `cell_index`, `x`,
+`y`, `area_sqm`, `proportion`, as `river_route.runoff.reduced_grid_weights` writes it, and the forecast GRIB files are routed as they are, with river-route's `ecmwf_grib` forcing.
+The ensemble forecasts (ENFO) and the reforecasts (ENFH) are both on `O1280`, so its weights serve both.
+
+`gridweights_<grid>_<id>.parquet` holds the netCDF's rows without `x` and `y`, which jsrr does not read: `river_id`, `x_index` and `y_index` as int32, `area_sqm` and `proportion` as float32,
+snappy compressed, without dictionary encoding, in one row group. jsrr refuses a
+region unless every river in `network.parquet` has a weight and every weight names one of its rivers.
+
+### Flood Forecast Products
+
+The daily 15-day forecast is published under `forecasts15/`, partitioned `year=YYYY/month=MM/day=DD/`, with the files listed in
+[Organization on S3](#organization-on-s3): `discharge.zarr`, the map stylesets (see [Forecast map stylesets](#forecast-map-stylesets)), `alerts.csv` (see
+[Forecast alerts](#forecast-alerts)), the Esri animation tables, `fim.geo.parquet`, the vector flood extents, and the routing warm states for the next run.
+
+The forecast discharge store contains
+
+1. `Q` (riverId, member, time): 3 hourly discharge for each of the 50+1 IFS forecast members, `member` 0 the control forecast and 1..50 the perturbed forecasts of the same number
+2. `Qpercentiles` (riverId, percentiles, time): 3 hourly discharge ensemble at deciles 0 (min), 10, 20 ... 50 (median) ... 90, 100 (max)
+3. `Qmean` (riverId, time): 3 hourly discharge ensemble mean
+
+### Retrospective Simulation Products
+
+The retrospective stores are listed in [Products](#products) and laid out in [Zarr structuring](#zarr-structuring).
+
+Routing warm states are not stored under `retrospective/`. They are written per computational unit with the forecast that consumes them, at
+`forecasts15/year=YYYY/month=MM/day=DD/next-init-files/group=XXX/warmstate_YYYYMMDDHHMM_groupXXX.parquet`.
+
+### Flood Maps
+
+Flood maps are tiled, partitioned `flood-maps/lon=XXX/lat=YYY/`. Each tile holds the return period flood maps, the ARC tables, and the FLDPLN library used by the flood worker.
+
+| File                                          | Format  | Description                                                |
+|-----------------------------------------------|---------|------------------------------------------------------------|
+| `return_period_maps/rp{2,5,10,25,50,100}.tif` | GeoTIFF | Flood map for each return period, 2 to 100 years           |
+| `arc/vdt.parquet`                             | Parquet | ARC velocity, depth, and top width table                   |
+| `arc/representative_xsections.parquet`        | Parquet | ARC representative cross sections                          |
+| `fldpln/fldpln_library.parquet`               | Parquet | FLDPLN library                                             |
+| `fldpln/stream_info.parquet`                  | Parquet | FLDPLN stream information                                  |
+| `fldpln/fldpln.zarr/`                         | Zarr v3 | Per tile FLDPLN library, read directly by the flood worker |
+
+The daily forecast also publishes vector flood extents as a single `fim.geo.parquet` per forecast, which is faster and smaller than a raster set for map clients. See
+[Flood Forecast Products](#flood-forecast-products).
+
+The internal layout of `fldpln.zarr` is documented in the [Technical Appendix](#flood-mapslonxxxlatyyyfldplnzarr).
+
+### Web Maps
+
+1. Daily forecasted flood maps [https://www.arcgis.com/home/item.html?id=8f0573e0c0b9491dbeafde9c72ccf02b](https://www.arcgis.com/home/item.html?id=8f0573e0c0b9491dbeafde9c72ccf02b)
+2. Return period flood maps and/or forecasted flood maps (ESRI)
+    1. Return period flood maps
+    2. Daily forecast flood maps, from the 90th percentile of the ensemble maximum
+
+## Open Questions
+
+- **Modification records format.** The `mods/` files are raw JSON, ~165 MB uncompressed across the release, in directories where everything else is zstd geoparquet tuned for range fetches. They cannot be range-fetched and a consumer wanting the survivor map parses all 282 of them. A single parquet per region — `{member, keeper, editKind}`, dictionary encoded — would be a fraction of the size and read with the same tooling as the rest of the partition. Deferred, not urgent.
+- **Region tiles.** Only `streams.pmtiles` is built. `tile_regions.sh` is commented out of `pipeline.sh`. Decide whether it returns or is dropped from v3; [Vector tiles](#vector-tiles) describes the design.
+- **Warm state partition.** `forecasts15/.../next-init-files/group=XXX/` names a unit that no longer exists. The hydrography computational group was removed, so a warm state is no longer partitioned by anything the hydrography publishes. Decide what the router writes instead — `region=<id>` to match the hydrography partition, or a unit of its own choosing. The same question applies to `fim.geo.parquet` "for all groups".
+
+## Design Notes
+
+Why some of the choices above were made, for those changing them.
+
+- **Row order.** Descending the largest subtree first is the exact minimizer of the distance between a reach and the reach it drains into over every post-order: a mean of 3.5 rows against 135.3 unordered, the 99th percentile 28 against 1,451, over all 3.89 million edges. Both the compressor and the routing kernel use that locality.
+- **Geometry storage.** Snapping to a 1 m grid leaves about 30 trailing zero mantissa bits in every float64 coordinate; geoarrow keeps x and y in separate columns and `BYTE_STREAM_SPLIT` groups the zero bytes so zstd collapses them, cutting the hydrography 60-70%. None helps alone, and no decimal degree grid is a power of two. zstd level 3 reaches the locality the row order creates: 380 MB against 1,247 MB unordered with snappy on one 352,529 reach region.
+- **Chunking.** On a real group, one river per chunk compressed 2.85x and read one river in 1.5 ms, against 2.16x and 2.8 ms at ten rivers per chunk, because wider C-order chunks interleave rivers and break the series' autocorrelation. A short series of one river is 28 to 480 bytes, about the 32 bytes of blosc header and index entry a chunk costs, so short arrays hold 250 or 1,000 rivers a chunk; one-river chunks of yearly `Q` would make a shard index 800 KB instead of 3 KB.
+- **`riverId` first.** With one river per chunk, `(1, n_time)` and `(n_time, 1)` chunks are byte for byte the same on disk; river-first only spares every writer a transpose.
+- **One keepbits.** Rounding is idempotent at a fixed keepbits, so every derived store matches the hourly values exactly and a daily mean can be reproduced by resampling the hourly store.
+
+## Implementation Details
+
+### Log/Status Feeds
+
+In addition to writing logging messages to disc, status information is sent to the following locations:
+
+- Teams channel webhook
+- AWS CloudWatch logs
+
+## Technical Appendix
+
+Expanded explanations of the products summarized in the sections above.
+
+### Hydrography details
 
 #### Row order, `riverIndex`, and `upstreamCount`
 
@@ -596,11 +704,12 @@ optional and is not written by default.
 
 #### Vector tiles
 
-Two tilesets are specified in `global/`, all built with tippecanoe from the parquet products above, so there is no second simplified copy of any geometry.
+Three tilesets are specified in `global/`, all built with tippecanoe from the parquet products above, so there is no second simplified copy of any geometry.
 
 | Tileset           | Zooms | Layers    | Notes                                                                                                                                                                                                                                                                                              |
 |-------------------|-------|-----------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `streams.pmtiles` | 0-11  | `streams` | Tiled per region then joined. Carries every attribute except `USContArea`. Reaches appear by Strahler order: 7+ at every zoom, 6+ from z5, 4+ from z7, 2+ from z9; order 1 reaches are not tiled at any zoom; the densest tiles drop features as needed |
+| `catchments.pmtiles` | <mark>TBD</mark> | `catchments`, `catchment_lines` | Catchment polygons for fills and hit testing, and their boundaries for strokes, tiled in zoom bands, see below |
 | `regions.pmtiles` | 0-12  | `regions` | The region outlines with `TDXHydroRegion`. **Not currently built**                                                                                                                                                                                                                                 |
 
 Every catchment band is tiled twice: `catchments` holds the polygons for fills and hit testing, and `catchment_lines` holds their boundaries for strokes. Clipping a polygon to a tile has to close the
@@ -608,83 +717,11 @@ ring along the tile edge, so stroking the polygon layer draws the tile grid acro
 the polygon layer.** Each band's geometry is cut at a quarter pixel of the band's finest zoom, rounded to a power of two (32 m for the z10 leaf, 64 m at z9, and so on), and tippecanoe generalizes
 again per zoom on top of that.
 
-### Routing Configurations
-
-The files the router needs to route a region, short name `routing-configs`, are published under `routing/`, partitioned by the same `region=<id>` as the hydrography and kept apart from it.
-They are the exact files used to generate official routing outputs. They are made by the Calibration Scripts
-([`v3-calibration-scripts`](https://github.com/river-forecast-system/v3-calibration-scripts)) from the published hydrography after it is built, which they only read, so a new
-forcing grid changes `routing/` and never `hydrography/`. The hydrography carries no routing configuration. The Routing Scripts only read `routing/`.
-
-- `1_inputs/` writes the reference network and the grid weights of every forcing.
-- `2_routing_calibration/` writes the Routing Parameters, the calibrated Muskingum k and x in `routing.parquet`, see [RFS Calculations](#rfs-calculations): the regional
-  equations of celerity by drainage area give every river its baseline k (`routing_baseline.parquet`), and the rivers upstream of a gauge take the k of their basin's
-  calibration, one celerity multiplier per stretch between gauges, fitted from upstream down so that no gauge's KGE falls. x is 0.2 everywhere.
-
-Its files are listed in [Organization on S3](#organization-on-s3). `routing/global/` holds every region's file concatenated in `riverIndex` order, nothing recomputed, so the
-whole world can be routed in one process, which reads a forecast's GRIB files once rather than once per region.
-
-Every file lists the region's rivers in `riverIndex` order, which is topological. The router pairs weights with rivers by position, not by id: lateral inflow column i is routed into river i, so
-a region's files must agree with each other and with the hydrography's row order.
-
-The three networks are river-route's network file, one row per reach: `riverId`, `nextRiverId`, `riverIndex` and `upstreamCount` from the metadata and
-streams tables, and `muskingumK` (seconds) and `muskingumX`. They differ only in k. `gridweights_<grid>_<id>.nc` is one row per runoff-cell-to-catchment intersection, stamped with the grid file and the catchments it was cut
-from. It is named for the forcing grid, so each grid needs its own. On the regular ERA5 grid its columns are `river_id`, `x_index`, `y_index`, `x`, `y`, `area_sqm`, `proportion`. On the
-IFS reduced gaussian grid, `O1280`, a cell is located by `cell_index`, its position in the values of a GRIB message, in place of `x_index` and `y_index`: `river_id`, `cell_index`, `x`,
-`y`, `area_sqm`, `proportion`, as `river_route.runoff.reduced_grid_weights` writes it, and the forecast GRIB files are routed as they are, with river-route's `ecmwf_grib` forcing.
-The ensemble forecasts (ENFO) and the reforecasts (ENFH) are both on `O1280`, so its weights serve both.
-
-`gridweights_<grid>_<id>.parquet` holds the netCDF's rows without `x` and `y`, which jsrr does not read: `river_id`, `x_index` and `y_index` as int32, `area_sqm` and `proportion` as float32,
-snappy compressed, without dictionary encoding, in one row group. jsrr refuses a
-region unless every river in `routing.parquet` has a weight and every weight names one of its rivers.
-
-### Flood Forecast Products
-
-The daily 15-day forecast is published under `forecasts15/`, partitioned `year=YYYY/month=MM/day=DD/`, with the files listed in
-[Organization on S3](#organization-on-s3): `discharge.zarr`, the map stylesets (see [Forecast map stylesets](#forecast-map-stylesets)), `alerts.csv` (see
-[Forecast alerts](#forecast-alerts)), the Esri animation tables, `fim.geo.parquet`, the vector flood extents, and the routing warm states for the next run.
-
-The forecast discharge store contains
-
-1. `Q` (riverId, member, time): 3 hourly discharge for each of the 50+1 IFS forecast members, `member` 0 the control forecast and 1..50 the perturbed forecasts of the same number
-2. `Qpercentiles` (riverId, percentiles, time): 3 hourly discharge ensemble at deciles 0 (min), 10, 20 ... 50 (median) ... 90, 100 (max)
-3. `Qmean` (riverId, time): 3 hourly discharge ensemble mean
-
-### Retrospective Simulation Products
-
-The retrospective stores are listed in [Products](#products) and laid out in [Zarr structuring](#zarr-structuring).
-
-Routing warm states are not stored under `retrospective/`. They are written per computational unit with the forecast that consumes them, at
-`forecasts15/year=YYYY/month=MM/day=DD/next-init-files/group=XXX/warmstate_YYYYMMDDHHMM_groupXXX.parquet`.
-
-### Flood Maps
-
-Flood maps are tiled, partitioned `flood-maps/lon=XXX/lat=YYY/`. Each tile holds the ARC/Curve2Flood raster products and the FLDPLN library used by the flood worker.
-
-| File                  | Format  | Description                                                 |
-|-----------------------|---------|-------------------------------------------------------------|
-| `arc/fim.tiff`        | GeoTIFF | Flood inundation extent                                     |
-| `arc/depth.tiff`      | GeoTIFF | Inundation depth                                            |
-| `arc/velocity.tiff`   | GeoTIFF | Flow velocity                                               |
-| `arc/c2f_config.yaml` | YAML    | The ARC/Curve2Flood configuration used to produce this tile |
-| `fldpln.zarr/`        | Zarr v3 | Per tile FLDPLN library, read directly by the flood worker  |
-
-The daily forecast also publishes vector flood extents as a single `fim.geo.parquet` per forecast, which is faster and smaller than a raster set for map clients. See
-[Flood Forecast Products](#flood-forecast-products).
-
-The internal layout of `fldpln.zarr` is documented in [Dataset Structure and Schematics](#flood-mapslonxxxlatyyyfldplnzarr).
-
-### Web Maps
-
-1. Daily forecasted flood maps [https://www.arcgis.com/home/item.html?id=8f0573e0c0b9491dbeafde9c72ccf02b](https://www.arcgis.com/home/item.html?id=8f0573e0c0b9491dbeafde9c72ccf02b)
-2. Return period flood maps and/or forecasted flood maps (ESRI)
-    1. Return period flood maps
-    2. Daily forecast flood maps, from the 90th percentile of the ensemble maximum
-
-## Zarr structuring
+### Zarr structuring
 Every store is **Zarr v3**. The river axis is named `riverId`, discharge is named `Q`, and **`riverId` is the first dimension of every array** — `(riverId, time)`, not the `(time, riverId)` v2 used.
 Chunking and sharding are fixed for every store, see [Chunking and sharding](#chunking-and-sharding); the schematics below repeat what that section sets.
 
-### Datatypes
+#### Datatypes
 
 Only discharge valued arrays are bitrounded.
 
@@ -705,7 +742,7 @@ Only discharge valued arrays are bitrounded.
 | `p_exceed`                                              | `int32`   | no         | fdc.zarr, percent 0..100                 |
 | `hourly_annual`, `daily_annual`                         | `float32` | **yes**    | fdc.zarr flow-duration curves            |
 
-### Coordinate variables
+#### Coordinate variables
 
 - `riverId`
     - int32
@@ -738,7 +775,7 @@ Only discharge valued arrays are bitrounded.
 - `percentiles`
     - Are exactly the integer values: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].
 
-### Data variables
+#### Data variables
 
 - Discharge
     - **Q** in every store. In the forecasts it carries a `member` dimension, there is no separate variable name for ensemble discharge.
@@ -766,12 +803,12 @@ Only discharge valued arrays are bitrounded.
 - Flow Duration Curves, `fdc.zarr`
     - **hourly_annual**, **daily_annual** on the `p_exceed` axis. `hourly_annual[95]` is the flow the reach exceeds 95% of the time.
 
-### Fill values and completeness
+#### Fill values and completeness
 
 Discharge arrays are complete: every river on the `riverId` axis has a value at every step of the `time` axis, and the coordinate arrays themselves have no gaps. The fill value is `NaN`, so a NaN
 indicates a real failure to be investigated, not an expected absence.
 
-### Encoding and compression
+#### Encoding and compression
 
 - Write an explicit dtype on every array at store creation time. Discharge valued arrays are `float32`, coordinate and index arrays are `int32`.
 - Bitround discharge to **13 keepbits**, round-to-nearest-even on the low mantissa bits. This bounds relative error at `2^-14` ≈ 6.1e-05.
@@ -786,7 +823,7 @@ indicates a real failure to be investigated, not an expected absence.
 - Leave `typesize` unset so each array derives it from its own itemsize.
 - **Consolidate every store's metadata**, so opening a store is one request. The exception is `hydrography/global/metadata.zarr`, whose arrays a client fetches by name.
 
-### Chunking and sharding
+#### Chunking and sharding
 
 Chunking is fixed per array, and every discharge array is **sharded** (`sharding_indexed` with blosc inside): a chunk is what a reader decompresses, a shard the file it lives in, from
 which a reader range-GETs one chunk using the shard index.
@@ -825,7 +862,7 @@ Forecasts, the 50+1 ensemble (50 perturbed forecasts and 1 control) over 120 ste
 `85y` is the number of steps 85 years spans at that store's own step: 745,128 hourly, 31,047 daily, 1,020 monthly, 85 yearly. From 2025 on, each array's second chunk along time has the same
 rivers per chunk and per shard.
 
-### retrospective/hourly.zarr, daily.zarr
+#### retrospective/hourly.zarr, daily.zarr
 
 ```text
 daily.zarr/
@@ -839,7 +876,7 @@ hourly.zarr/                  identical shape/attrs, time on the hourly axis —
                               note the daily axis is still counted in hours, not days
 ```
 
-### retrospective/monthly.zarr, yearly.zarr
+#### retrospective/monthly.zarr, yearly.zarr
 
 ```text
 monthly.zarr/                 two chunkings of the same values, one store serves both access patterns
@@ -853,7 +890,7 @@ dims: riverId=N · time=1038 months
 yearly.zarr/                  the same, one value per year
 ```
 
-### retrospective/return-periods.zarr, maximums.zarr
+#### retrospective/return-periods.zarr, maximums.zarr
 
 ```text
 return-periods.zarr/          no time dim — the interval is the axis. client zips recurrence_interval x gumbel_* -> {2: q, 5: q, ...}
@@ -883,7 +920,7 @@ maximums.zarr/                annual maxima the fit above is derived from, kept 
                               daily means, so both are reduced where the hourly values are, in one pass.
 ```
 
-### retrospective/fdc.zarr
+#### retrospective/fdc.zarr
 
 ```text
 fdc.zarr/                     flow duration curves. no time dim — exceedance probability is the axis.
@@ -897,7 +934,7 @@ fdc.zarr/                     flow duration curves. no time dim — exceedance p
 `p_exceed` is *exceedance*, not a plotting position. `hourly_annual[95]` is the flow the reach exceeds 95% of the time, that is, a low flow threshold. The `below-q95` map styleset is built from
 exactly that row.
 
-### forecasts15/year=YYYY/month=MM/day=DD/discharge.zarr
+#### forecasts15/year=YYYY/month=MM/day=DD/discharge.zarr
 
 ```text
 discharge.zarr/
@@ -913,13 +950,13 @@ discharge.zarr/
 dims: riverId=N · member=50+1 · time=120 (15 d @ 3 h) · percentiles=11
 ```
 
-### forecasts15/year=YYYY/month=MM/day=DD/maps and alerts.csv
+#### forecasts15/year=YYYY/month=MM/day=DD/maps and alerts.csv
 
 The forecast map stylesets color and size the stream tiles in a browser without the client reading the discharge store. There are four, each a pair of files under
 `maps/<styleset>/`: `timeseries`, `max-flow`, `time-to-peak` and `below-q95`. Each holds one byte per river per step, and the byte's meaning depends on the styleset. The
 reference implementation is `write_styles` and the functions beside it in `rfs_spec.py` of the Routing Scripts (`v3-routing-scripts`); the web app decodes them in `src/map/Streams.js`.
 
-#### Forecast map stylesets
+##### Forecast map stylesets
 
 **`styles.bin`** is an array of `uint8`, shape `(n_reaches, n_steps)`, C order, so the byte of the river at `riverIndex` i and step t is at offset `i * n_steps + t`.
 
@@ -963,7 +1000,7 @@ reference implementation is `write_styles` and the functions beside it in `rfs_s
 To recreate a styleset: take the median for every river in `riverIndex` order, compute the byte above for each river and step, delta encode each river's row modulo 256, zlib compress the
 array, and write the JSON beside it. To read one: inflate, undo the deltas with a running sum modulo 256, and index row `riverIndex`.
 
-#### Forecast alerts
+##### Forecast alerts
 
 `alerts.csv` has one row per river at which at least **30% of the ensemble members** exceed one of the river's return period flows, `gumbel_hourly` at every `recurrence_interval` from
 1.5 to 100 years, at one step or more. The row is for the largest recurrence interval that is reached. The columns carry the fields of a CAP alert:
@@ -988,7 +1025,7 @@ array, and write the JSON beside it. To read one: inflate, undo the deltas with 
 
 Rows are in `riverIndex` order. The rules are the constants `ALERT_PROBABILITY`, `ALERT_SEVERITY`, `ALERT_URGENCY_HOURS` and `ALERT_LIKELY` in `rfs_spec.py`.
 
-### flood-maps/lon=XXX/lat=YYY/fldpln.zarr
+#### flood-maps/lon=XXX/lat=YYY/fldpln.zarr
 
 `fldpln.zarr` is not gridded and is not read with xarray. It is a flat, sorted, per river contiguous set of run arrays sliced by offsets carried in the group attributes, read by the flood worker
 directly.
@@ -1018,29 +1055,3 @@ fldpln.zarr/                  per-tile FLDPLN library
 
 kernel:  depth(fpp) = max over relations (DoF - DTF) + fill      no raster ships, bed elevation cancels out
 ```
-
-## Open Questions
-
-- **Modification records format.** The `mods/` files are raw JSON, ~165 MB uncompressed across the release, in directories where everything else is zstd geoparquet tuned for range fetches. They cannot be range-fetched and a consumer wanting the survivor map parses all 282 of them. A single parquet per region — `{member, keeper, editKind}`, dictionary encoded — would be a fraction of the size and read with the same tooling as the rest of the partition. Deferred, not urgent.
-- **Region tiles.** Only `streams.pmtiles` is built. `tile_regions.sh` is commented out of `pipeline.sh`. Decide whether it returns or is dropped from v3; [Vector tiles](#vector-tiles) describes the design.
-- **Warm state partition.** `forecasts15/.../next-init-files/group=XXX/` names a unit that no longer exists. The hydrography computational group was removed, so a warm state is no longer partitioned by anything the hydrography publishes. Decide what the router writes instead — `region=<id>` to match the hydrography partition, or a unit of its own choosing. The same question applies to `fim.geo.parquet` "for all groups".
-- **Flood map tiles.** Impact layers, DEM, and burned DEM per tile are TBD, and the files listed in [Flood Maps](#flood-maps) differ from those in [Organization on S3](#organization-on-s3).
-
-## Design Notes
-
-Why some of the choices above were made, for those changing them.
-
-- **Row order.** Descending the largest subtree first is the exact minimizer of the distance between a reach and the reach it drains into over every post-order: a mean of 3.5 rows against 135.3 unordered, the 99th percentile 28 against 1,451, over all 3.89 million edges. Both the compressor and the routing kernel use that locality.
-- **Geometry storage.** Snapping to a 1 m grid leaves about 30 trailing zero mantissa bits in every float64 coordinate; geoarrow keeps x and y in separate columns and `BYTE_STREAM_SPLIT` groups the zero bytes so zstd collapses them, cutting the hydrography 60-70%. None helps alone, and no decimal degree grid is a power of two. zstd level 3 reaches the locality the row order creates: 380 MB against 1,247 MB unordered with snappy on one 352,529 reach region.
-- **Chunking.** On a real group, one river per chunk compressed 2.85x and read one river in 1.5 ms, against 2.16x and 2.8 ms at ten rivers per chunk, because wider C-order chunks interleave rivers and break the series' autocorrelation. A short series of one river is 28 to 480 bytes, about the 32 bytes of blosc header and index entry a chunk costs, so short arrays hold 250 or 1,000 rivers a chunk; one-river chunks of yearly `Q` would make a shard index 800 KB instead of 3 KB.
-- **`riverId` first.** With one river per chunk, `(1, n_time)` and `(n_time, 1)` chunks are byte for byte the same on disk; river-first only spares every writer a transpose.
-- **One keepbits.** Rounding is idempotent at a fixed keepbits, so every derived store matches the hourly values exactly and a daily mean can be reproduced by resampling the hourly store.
-
-## Implementation Details
-
-### Log/Status Feeds
-
-In addition to writing logging messages to disc, status information is sent to the following locations:
-
-- Teams channel webhook
-- AWS CloudWatch logs

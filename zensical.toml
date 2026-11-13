@@ -1,5 +1,6 @@
 [project]
 site_name = "River Forecast System Version Specifications"
+site_url = "https://specifications.riverforecastsystem.com/"
 extra_css = ["stylesheets/extra.css"]
 nav = [
   { "Home" = "index.md" },
@@ -19,3 +20,20 @@ features = [
   # the table of contents scrolls to keep the heading being read in view
   "toc.follow",
 ]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to system preference"

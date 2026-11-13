@@ -1,0 +1,63 @@
+/* a slightly wider middle column than the theme's 61rem page */
+.md-grid {
+  max-width: 68rem;
+}
+
+/* the dependencies diagram: rows of groups, left aligned, in the mermaid diagrams' colours */
+.md-typeset .dependency-diagram {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin: 1em 0;
+  font-size: 0.75rem;
+}
+
+.md-typeset .dependency-row {
+  display: flex;
+  gap: 0.6rem;
+}
+
+/* a row wraps only when the screen is too narrow to hold it, and on a phone a group's boxes wrap too */
+@media screen and (max-width: 78em) {
+  .md-typeset .dependency-row {
+    flex-wrap: wrap;
+  }
+
+  .md-typeset .dependency-items {
+    flex-wrap: wrap;
+  }
+}
+
+.md-typeset .dependency-group {
+  padding: 0.3rem 0.6rem 0.6rem;
+  border: 1px solid #aaaaaa;
+  background: #f4f4f4;
+  text-align: center;
+}
+
+.md-typeset .dependency-title {
+  margin-bottom: 0.4rem;
+  white-space: nowrap;
+  color: #333333;
+}
+
+.md-typeset .dependency-items {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.md-typeset .dependency-items span {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid #4a8a5a;
+  background: #e8f4ea;
+  color: #1b3322;
+  white-space: nowrap;
+}
+
+.md-typeset .dependency-items span.code {
+  border-color: #c48a2c;
+  background: #fff4e0;
+  color: #3d2a08;
+}
